@@ -11,14 +11,14 @@ export interface FirebaseConfig {
   appId?: string;
 }
 
-// 1. Check environment variables
+// Default Firebase project configuration
 const envConfig: FirebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyB2IMYCMxEshcFwKbTEOfGEh3dN0WMksrg",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "scholarships-dashboard.firebaseapp.com",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "scholarships-dashboard",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "scholarships-dashboard.firebasestorage.app",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "916848323649",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:916848323649:web:8fc1b9655b4d9a4b2b6ac0",
 };
 
 export const getStoredFirebaseConfig = (): FirebaseConfig | null => {
