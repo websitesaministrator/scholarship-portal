@@ -25,6 +25,7 @@ export const FirebaseConfigModal = () => {
     isFirebaseSettingsOpen,
     setIsFirebaseSettingsOpen,
     firebaseActive,
+    syncStatus,
     refreshAllData,
     showToast,
   } = useApp();
@@ -147,31 +148,65 @@ NEXT_PUBLIC_FIREBASE_APP_ID="${config.appId || '1:123456789:web:abcdef'}"`;
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-5 space-y-6 text-xs text-slate-700">
           {/* Status banner */}
-          <div
-            className={`p-3.5 rounded-lg border flex items-start gap-3 ${
-              firebaseActive
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                : 'bg-slate-50 border-slate-200 text-slate-700'
-            }`}
-          >
-            {firebaseActive ? (
+          {syncStatus === 'connected' ? (
+            <div className="p-3.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 flex items-start gap-3">
               <CheckCircle className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
-            ) : (
-              <HardDrive className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-            )}
-            <div>
-              <div className="font-semibold text-slate-900">
-                {firebaseActive
-                  ? 'Connected to Firebase Cloud'
-                  : 'Currently Running in Local Storage Mode'}
+              <div>
+                <div className="font-semibold text-slate-900 flex items-center gap-2">
+                  <span>Connected to Firebase Cloud (Live Sync Active)</span>
+                  <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold">ONLINE</span>
+                </div>
+                <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                  Your scholarships, deadlines, tasks, and document scans sync in real time across all your logged-in browsers and phones.
+                </p>
               </div>
-              <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                {firebaseActive
-                  ? 'Your scholarships, deadlines, tasks, and document scans sync in real time across all your logged-in browsers and phones.'
-                  : 'Your data is being safely saved to this browser\'s persistent local storage. Connect Firebase below for instant multi-device syncing.'}
-              </p>
             </div>
-          </div>
+          ) : syncStatus === 'not_created' ? (
+            <div className="p-4 rounded-xl border border-amber-300 bg-amber-50/90 text-amber-900 space-y-2.5">
+              <div className="flex items-start gap-2.5">
+                <Cloud className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-semibold text-amber-950 text-xs">
+                    1 Quick Step Needed: Enable Firestore in Firebase Console
+                  </div>
+                  <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                    Your Firebase keys for project <strong>{config.projectId || 'scholarships-dashboard'}</strong> are configured, but the <strong>Cloud Firestore Database</strong> has not been enabled in your Firebase account yet.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-white/80 border border-amber-200 rounded-lg p-2.5 text-[11px] text-amber-900 space-y-1 font-medium">
+                <p className="font-bold text-amber-950">How to activate it (takes 15 seconds):</p>
+                <ol className="list-decimal list-inside space-y-0.5 text-amber-800">
+                  <li>Click the button below to open Firebase Console.</li>
+                  <li>Click <strong>&quot;Create database&quot;</strong>.</li>
+                  <li>Select <strong>&quot;Start in test mode&quot;</strong> and click <strong>&quot;Enable&quot;</strong>.</li>
+                </ol>
+              </div>
+
+              <a
+                href={`https://console.firebase.google.com/project/${config.projectId || 'scholarships-dashboard'}/firestore`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-xs transition-colors"
+              >
+                <span>Open Firebase Console &amp; Enable Firestore</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+          ) : (
+            <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 flex items-start gap-3">
+              <HardDrive className="w-4 h-4 text-slate-500 mt-0.5 shrink-0" />
+              <div>
+                <div className="font-semibold text-slate-900">
+                  Running in Local Storage Mode
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                  Your data is safely saved to this browser&apos;s persistent local storage. Connect Firebase below for instant multi-device syncing.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Form */}
           <form onSubmit={handleSaveFirebase} className="space-y-4">

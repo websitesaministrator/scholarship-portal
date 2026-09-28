@@ -13,27 +13,32 @@ import {
   ActiveNavTab,
 } from '@/types';
 import {
-  getScholarships,
+  getLocalScholarships,
+  getLocalTasks,
+  getLocalDocuments,
+  getLocalActivities,
+  getLocalProfile,
+  getLocalGapYear,
+  getLocalStorySections,
   saveScholarship as saveSchStorage,
   deleteScholarship as deleteSchStorage,
-  getTasks,
   saveTask as saveTaskStorage,
   deleteTask as deleteTaskStorage,
-  getDocuments,
   saveDocument as saveDocStorage,
   deleteDocument as deleteDocStorage,
   uploadDocumentFile as uploadDocFileStorage,
-  getActivities,
   saveActivity as saveActStorage,
   deleteActivity as deleteActStorage,
-  getProfile,
   saveProfile as saveProfStorage,
-  getGapYear,
   saveGapYear as saveGapStorage,
-  getStorySections,
   saveStorySection as saveStoryStorage,
   deleteStorySection as deleteStoryStorage,
   initializeLocalSeedData,
+  probeFirestoreStatus,
+  subscribeToRealtimeUpdates,
+  SyncStatus,
+  importAllData,
+  exportAllData,
 } from '@/lib/storage';
 import { isFirebaseConfigured } from '@/lib/firebase';
 
@@ -104,6 +109,8 @@ interface AppContextType {
   // System state
   isLoading: boolean;
   firebaseActive: boolean;
+  syncStatus: SyncStatus;
+  syncStatusMessage: string;
   refreshAllData: () => Promise<void>;
   triggerCelebration: () => void;
   toastMessage: { text: string; type: 'success' | 'info' | 'error' } | null;
@@ -120,18 +127,45 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [isFirebaseSettingsOpen, setIsFirebaseSettingsOpen] = useState(false);
   const [selectedScholarshipId, setSelectedScholarshipId] = useState<string | null>(null);
 
-  const [isLoading, setIsLoading] = useState(true);
+  // Instant 0ms local initial state
+  const [isLoading, setIsLoading] = useState(false);
   const [firebaseActive, setFirebaseActive] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('offline');
+  const [syncStatusMessage, setSyncStatusMessage] = useState('Local Storage Mode');
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
 
-  // Core Data States
-  const [scholarships, setScholarships] = useState<Scholarship[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [documents, setDocuments] = useState<DocumentItem[]>([]);
-  const [activities, setActivities] = useState<ActivityItem[]>([]);
-  const [profile, setProfile] = useState<ProfileData>({} as ProfileData);
-  const [gapYear, setGapYear] = useState<GapYearData>({} as GapYearData);
-  const [storySections, setStorySections] = useState<StorySection[]>([]);
+  // Core Data States - initialized immediately from local cache
+  const [scholarships, setScholarships] = useState<Scholarship[]>(() => {
+    if (typeof window !== 'undefined') {
+      initializeLocalSeedData();
+      return getLocalScholarships();
+    }
+    return [];
+  });
+  const [tasks, setTasks] = useState<Task[]>(() => {
+    if (typeof window !== 'undefined') return getLocalTasks();
+    return [];
+  });
+  const [documents, setDocuments] = useState<DocumentItem[]>(() => {
+    if (typeof window !== 'undefined') return getLocalDocuments();
+    return [];
+  });
+  const [activities, setActivities] = useState<ActivityItem[]>(() => {
+    if (typeof window !== 'undefined') return getLocalActivities();
+    return [];
+  });
+  const [profile, setProfile] = useState<ProfileData>(() => {
+    if (typeof window !== 'undefined') return getLocalProfile();
+    return {} as ProfileData;
+  });
+  const [gapYear, setGapYear] = useState<GapYearData>(() => {
+    if (typeof window !== 'undefined') return getLocalGapYear();
+    return {} as GapYearData;
+  });
+  const [storySections, setStorySections] = useState<StorySection[]>(() => {
+    if (typeof window !== 'undefined') return getLocalStorySections();
+    return [];
+  });
 
   // Format today as YYYY-MM-DD
   const todayStr = useMemo(() => {
@@ -171,43 +205,58 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setIsQuickAddOpen(false);
   };
 
-  // Load all data
+  // Sync and probe in background without blocking UI
   const refreshAllData = async () => {
-    setIsLoading(true);
     initializeLocalSeedData();
-    const fbOk = isFirebaseConfigured();
-    setFirebaseActive(fbOk);
+    // Load local immediately
+    setScholarships(getLocalScholarships());
+    setTasks(getLocalTasks());
+    setDocuments(getLocalDocuments());
+    setActivities(getLocalActivities());
+    setProfile(getLocalProfile());
+    setGapYear(getLocalGapYear());
+    setStorySections(getLocalStorySections());
 
-    try {
-      const [schs, tsks, docs, acts, prof, gap, stories] = await Promise.all([
-        getScholarships(),
-        getTasks(),
-        getDocuments(),
-        getActivities(),
-        getProfile(),
-        getGapYear(),
-        getStorySections(),
-      ]);
+    const fbConfigured = isFirebaseConfigured();
+    setFirebaseActive(fbConfigured);
 
-      setScholarships(schs);
-      setTasks(tsks);
-      setDocuments(docs);
-      setActivities(acts);
-      setProfile(prof);
-      setGapYear(gap);
-      setStorySections(stories);
-    } catch (e) {
-      console.error('Failed to load portal data:', e);
-      showToast('Could not load data, using offline fallback', 'error');
-    } finally {
-      setIsLoading(false);
+    if (fbConfigured) {
+      const probe = await probeFirestoreStatus();
+      setSyncStatus(probe.status);
+      setSyncStatusMessage(probe.message);
+      if (probe.status === 'connected') {
+        // Wait for onSnapshot to pull latest data.
+        // We no longer blindly push local to remote on load to prevent data loss.
+      }
+    } else {
+      setSyncStatus('offline');
+      setSyncStatusMessage('Local Storage Mode');
     }
   };
 
   useEffect(() => {
+    // 1. Initial hydration
     refreshAllData();
 
-    // Keyboard Shortcuts: Ctrl+K or Cmd+K
+    // 2. Real-time Firestore sync listener
+    const unsubscribe = subscribeToRealtimeUpdates({
+      onScholarships: (schs) => setScholarships(schs),
+      onTasks: (tsks) => setTasks(tsks),
+      onDocuments: (docs) => setDocuments(docs),
+      onActivities: (acts) => setActivities(acts),
+      onStorySections: (stories) => setStorySections(stories),
+      onProfile: (prof) => setProfile(prof),
+      onGapYear: (gap) => setGapYear(gap),
+      onError: (err) => {
+        const msg = err?.message || '';
+        if (msg.includes('Cloud Firestore API has not been used') || err?.code === 'permission-denied') {
+          setSyncStatus('not_created');
+          setSyncStatusMessage('Firestore Database not enabled yet in Firebase Console');
+        }
+      },
+    });
+
+    // 3. Keyboard Shortcuts: Ctrl+K or Cmd+K
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
@@ -219,7 +268,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      unsubscribe();
+    };
   }, []);
 
   // CRUD Operations with Optimistic UI updates
@@ -449,141 +501,118 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           id: `attn-sch-past-${s.id}`,
           type: 'deadline',
           title: `${s.name}`,
-          subtitle: `Deadline passed ${Math.abs(diffDays)} days ago (Status: ${s.status})`,
-          badge: 'Passed',
+          subtitle: `Deadline passed (${s.deadline}) - Update status`,
+          badge: 'Past Deadline',
           priority: 'warning',
           actionTab: 'scholarships',
           entityId: s.id,
         });
       }
-
-      // Check for incomplete requirements on imminent scholarships (< 14 days)
-      if (diffDays <= 14 && diffDays >= 0) {
-        const incompleteReqs = (s.requirements || []).filter(r => r.status === 'Not Started' || r.status === 'In Progress');
-        if (incompleteReqs.length > 0) {
-          items.push({
-            id: `attn-req-${s.id}`,
-            type: 'requirement',
-            title: `${s.name}`,
-            subtitle: `${incompleteReqs.length} requirement(s) incomplete: ${incompleteReqs.map(r => r.name).slice(0, 2).join(', ')}${incompleteReqs.length > 2 ? '...' : ''}`,
-            badge: `${incompleteReqs.length} Incomplete`,
-            priority: 'warning',
-            actionTab: 'scholarships',
-            entityId: s.id,
-          });
-        }
-      }
     });
 
-    // 2. Documents expiring soon (<= 90 days)
+    // 2. Expiring Documents within 90 days
     documents.forEach(d => {
-      if (d.expiryDate) {
-        const expDate = new Date(d.expiryDate);
-        const diffMs = expDate.getTime() - now.getTime();
-        const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+      if (!d.expiryDate) return;
+      const expDate = new Date(d.expiryDate);
+      const diffMs = expDate.getTime() - now.getTime();
+      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 
-        if (diffDays < 0) {
-          items.push({
-            id: `attn-doc-exp-${d.id}`,
-            type: 'document',
-            title: `${d.name}`,
-            subtitle: `Expired ${Math.abs(diffDays)} days ago`,
-            badge: 'Expired Document',
-            priority: 'urgent',
-            actionTab: 'documents',
-            entityId: d.id,
-          });
-        } else if (diffDays <= 90) {
-          items.push({
-            id: `attn-doc-soon-${d.id}`,
-            type: 'document',
-            title: `${d.name}`,
-            subtitle: `Expires in ${diffDays} days (${d.expiryDate})`,
-            badge: 'Expiring Soon',
-            priority: 'warning',
-            actionTab: 'documents',
-            entityId: d.id,
-          });
-        }
+      if (diffDays <= 90 && diffDays > 0) {
+        items.push({
+          id: `attn-doc-${d.id}`,
+          type: 'document',
+          title: d.name,
+          subtitle: `Expires in ${diffDays} days (${d.expiryDate})`,
+          badge: 'Doc Expiring',
+          priority: diffDays <= 30 ? 'urgent' : 'warning',
+          actionTab: 'documents',
+          entityId: d.id,
+        });
+      } else if (diffDays <= 0) {
+        items.push({
+          id: `attn-doc-exp-${d.id}`,
+          type: 'document',
+          title: d.name,
+          subtitle: `EXPIRED on ${d.expiryDate}`,
+          badge: 'Expired Document',
+          priority: 'urgent',
+          actionTab: 'documents',
+          entityId: d.id,
+        });
       }
     });
 
-    // 3. Overdue tasks summary
-    if (overdueTasks.length > 0) {
+    // 3. Overdue Tasks
+    overdueTasks.forEach(t => {
       items.push({
-        id: 'attn-overdue-tasks',
+        id: `attn-task-${t.id}`,
         type: 'task',
-        title: `${overdueTasks.length} Overdue Task${overdueTasks.length > 1 ? 's' : ''}`,
-        subtitle: `Oldest: "${overdueTasks[0].title}" (Due: ${overdueTasks[0].dueDate})`,
-        badge: 'Overdue',
+        title: t.title,
+        subtitle: `Overdue since ${t.dueDate}`,
+        badge: 'Overdue Task',
         priority: 'urgent',
         actionTab: 'todos',
+        entityId: t.id,
       });
-    }
+    });
 
     return items;
   }, [scholarships, documents, overdueTasks]);
 
-  return (
-    <AppContext.Provider
-      value={{
-        activeTab,
-        setActiveTab,
-        isQuickAddOpen,
-        openQuickAdd,
-        closeQuickAdd,
-        quickAddDefaultType,
-        isCommandPaletteOpen,
-        setIsCommandPaletteOpen,
-        isFirebaseSettingsOpen,
-        setIsFirebaseSettingsOpen,
-        selectedScholarshipId,
-        setSelectedScholarshipId,
+  const value = {
+    activeTab,
+    setActiveTab,
+    isQuickAddOpen,
+    openQuickAdd,
+    closeQuickAdd,
+    quickAddDefaultType,
+    isCommandPaletteOpen,
+    setIsCommandPaletteOpen,
+    isFirebaseSettingsOpen,
+    setIsFirebaseSettingsOpen,
+    selectedScholarshipId,
+    setSelectedScholarshipId,
+    scholarships,
+    tasks,
+    documents,
+    activities,
+    profile,
+    gapYear,
+    storySections,
+    addOrUpdateScholarship,
+    removeScholarship,
+    addOrUpdateTask,
+    toggleTaskComplete,
+    rescheduleTask,
+    removeTask,
+    addOrUpdateDocument,
+    uploadFileForDocument,
+    removeDocument,
+    addOrUpdateActivity,
+    removeActivity,
+    updateProfile,
+    updateGapYear,
+    addOrUpdateStorySection,
+    removeStorySection,
+    todayStr,
+    todayTasks,
+    thisWeekTasks,
+    thisMonthTasks,
+    overdueTasks,
+    upcomingTasks,
+    activeScholarships,
+    needsAttentionItems,
+    isLoading,
+    firebaseActive,
+    syncStatus,
+    syncStatusMessage,
+    refreshAllData,
+    triggerCelebration,
+    toastMessage,
+    showToast,
+  };
 
-        scholarships,
-        tasks,
-        documents,
-        activities,
-        profile,
-        gapYear,
-        storySections,
-
-        addOrUpdateScholarship,
-        removeScholarship,
-        addOrUpdateTask,
-        toggleTaskComplete,
-        rescheduleTask,
-        removeTask,
-        addOrUpdateDocument,
-        uploadFileForDocument,
-        removeDocument,
-        addOrUpdateActivity,
-        removeActivity,
-        updateProfile,
-        updateGapYear,
-        addOrUpdateStorySection,
-        removeStorySection,
-
-        todayStr,
-        todayTasks,
-        thisWeekTasks,
-        thisMonthTasks,
-        overdueTasks,
-        upcomingTasks,
-        activeScholarships,
-        needsAttentionItems,
-
-        isLoading,
-        firebaseActive,
-        refreshAllData,
-        triggerCelebration,
-        toastMessage,
-        showToast,
-      }}
-    >
-      {children}
-    </AppContext.Provider>
-  );
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 };
 
 export const useApp = () => {

@@ -31,6 +31,8 @@ export const AppShell = ({ children }: AppShellProps) => {
     setIsCommandPaletteOpen,
     setIsFirebaseSettingsOpen,
     firebaseActive,
+    syncStatus,
+    syncStatusMessage,
     todayTasks,
     overdueTasks,
     needsAttentionItems,
@@ -171,13 +173,19 @@ export const AppShell = ({ children }: AppShellProps) => {
             className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-slate-100 transition-colors text-xs text-slate-600 group"
           >
             <div className="flex items-center gap-2">
-              {firebaseActive ? (
+              {syncStatus === 'connected' ? (
                 <Cloud className="w-3.5 h-3.5 text-emerald-600" />
+              ) : syncStatus === 'not_created' ? (
+                <Cloud className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
               ) : (
                 <Database className="w-3.5 h-3.5 text-slate-400" />
               )}
               <span className="text-[11px] font-medium text-slate-700 group-hover:text-slate-900">
-                {firebaseActive ? 'Firebase Cloud Active' : 'Local Storage Mode'}
+                {syncStatus === 'connected'
+                  ? 'Firebase Live Sync'
+                  : syncStatus === 'not_created'
+                  ? 'Setup Firestore in Console'
+                  : 'Local Storage Mode'}
               </span>
             </div>
             <Settings className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700" />
@@ -222,18 +230,28 @@ export const AppShell = ({ children }: AppShellProps) => {
             <button
               onClick={() => setIsFirebaseSettingsOpen(true)}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] border font-medium transition-colors ${
-                firebaseActive
+                syncStatus === 'connected'
                   ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                  : syncStatus === 'not_created'
+                  ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 animate-pulse'
                   : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
               }`}
             >
               <span
                 className={`w-1.5 h-1.5 rounded-full ${
-                  firebaseActive ? 'bg-emerald-500' : 'bg-slate-400'
+                  syncStatus === 'connected'
+                    ? 'bg-emerald-500'
+                    : syncStatus === 'not_created'
+                    ? 'bg-amber-500'
+                    : 'bg-slate-400'
                 }`}
               ></span>
               <span className="hidden sm:inline">
-                {firebaseActive ? 'Cloud Synced' : 'Offline / Local'}
+                {syncStatus === 'connected'
+                  ? 'Cloud Synced (Live)'
+                  : syncStatus === 'not_created'
+                  ? 'Action Needed: Enable Firestore'
+                  : 'Offline / Local'}
               </span>
             </button>
           </div>
